@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Quickplus · Live Wallboard</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#060d16; color:#e5e7eb; font-family:'Segoe UI',sans-serif; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+
+  /* ── Header ── */
+  #header { display:flex; align-items:center; justify-content:space-between; padding:10px 28px; background:#0a1520; border-bottom:1px solid #1e2d3d; flex-shrink:0; }
+  #header-left { display:flex; align-items:center; gap:12px; }
+  #logo { width:36px; height:36px; border-radius:9px; background:linear-gradient(135deg,#1A6CF6,#00C389); display:flex; align-items:center; justify-content:center; font-size:17px; font-weight:900; color:#fff; }
+  #title { font-size:17px; font-weight:800; color:#f3f4f6; }
+  #subtitle { font-size:11px; color:#4b5563; margin-top:2px; }
+  #clock { font-size:22px; font-weight:700; color:#f3f4f6; font-family:monospace; }
+  #date { font-size:11px; color:#4b5563; text-align:right; margin-top:2px; }
+
+  /* ── Stats bar ── */
+  #stats { display:flex; gap:12px; padding:12px 28px; background:#0a1520; border-bottom:1px solid #1e2d3d; flex-shrink:0; }
+  .stat-card { flex:1; background:#0f1923; border-radius:12px; padding:14px 18px; position:relative; overflow:hidden; border:1px solid transparent; transition:border 0.3s; }
+  .stat-card .bg-circle { position:absolute; top:-20px; right:-20px; width:80px; height:80px; border-radius:50%; opacity:0.12; }
+  .stat-card .stat-value { font-size:32px; font-weight:900; font-family:monospace; }
+  .stat-card .stat-label { font-size:10px; color:#9ca3af; margin-top:3px; letter-spacing:0.1em; text-transform:uppercase; }
+  .stat-card .stat-pct { font-size:11px; margin-top:2px; opacity:0.8; }
+
+  /* ── Alert banner ── */
+  #alert-banner { padding:6px 28px; font-size:12px; font-weight:600; text-align:center; flex-shrink:0; transition:all 0.5s; display:none; }
+
+  /* ── Agent grid ── */
+  #grid-container { flex:1; overflow-y:auto; padding:12px 28px 16px; }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }
+  .agent-card { background:#0f1923; border-radius:10px; padding:12px 14px; border:1px solid #1e2d3d; transition:all 0.4s; position:relative; overflow:hidden; }
+  .agent-card .accent { position:absolute; left:0; top:0; bottom:0; width:3px; border-radius:10px 0 0 10px; }
+  .agent-name { font-size:13px; font-weight:600; color:#e5e7eb; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-left:8px; }
+  .agent-ext { font-size:10px; color:#4b5563; padding-left:8px; }
+  .agent-status { display:inline-flex; align-items:center; gap:5px; margin-top:7px; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; margin-left:8px; }
+  .agent-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+  .agent-duration { font-size:10px; color:#6b7280; padding-left:8px; margin-top:3px; font-family:monospace; }
+
+  /* scrollbar */
+  #grid-container::-webkit-scrollbar { width:4px; }
+  #grid-container::-webkit-scrollbar-track { background:#060d16; }
+  #grid-container::-webkit-scrollbar-thumb { background:#1e2d3d; border-radius:2px; }
+
+  /* pulse animation for alerts */
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+  .pulsing { animation:pulse 1.5s infinite; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <div id="header-left">
+    <div id="logo">Q</div>
+    <div>
+      <div id="title">Quickplus · Live Staff Wallboard</div>
+      <div id="subtitle" id="sync-status">Connecting to 3CX...</div>
+    </div>
+  </div>
+  <div style="text-align:right">
+    <div id="clock">--:--:--</div>
+    <div id="date"></div>
+  </div>
+</div>
+
+<!-- Stats -->
+<div id="stats">
+  <div class="stat-card" style="border-color:#1A6CF633">
+    <div class="bg-circle" style="background:#1A6CF6"></div>
+    <div class="stat-value" style="color:#1A6CF6" id="s-total">0</div>
+    <div class="stat-label">Total Agents</div>
+  </div>
+  <div class="stat-card" style="border-color:#00C38933" id="card-available">
+    <div class="bg-circle" style="background:#00C389"></div>
+    <div class="stat-value" style="color:#00C389" id="s-available">0</div>
+    <div class="stat-label">Available</div>
+    <div class="stat-pct" style="color:#00C389" id="s-available-pct"></div>
+  </div>
+  <div class="stat-card" style="border-color:#F59E0B33">
+    <div class="bg-circle" style="background:#F59E0B"></div>
+    <div class="stat-value" style="color:#F59E0B" id="s-away">0</div>
+    <div class="stat-label">Away</div>
+    <div class="stat-pct" style="color:#F59E0B" id="s-away-pct"></div>
+  </div>
+  <div class="stat-card" style="border-color:#EF444433">
+    <div class="bg-circle" style="background:#EF4444"></div>
+    <div class="stat-value" style="color:#EF4444" id="s-dnd">0</div>
+    <div class="stat-label">Do Not Disturb</div>
+  </div>
+  <div class="stat-card" style="border-color:#6B728033">
+    <div class="bg-circle" style="background:#6B7280"></div>
+    <div class="stat-value" style="color:#6B7280" id="s-offline">0</div>
+    <div class="stat-label">Offline</div>
+  </div>
+  <div class="stat-card" style="border-color:#06B6D433">
+    <div class="bg-circle" style="background:#06B6D4"></div>
+    <div class="stat-value" style="color:#06B6D4" id="s-oncall">0</div>
+    <div class="stat-label">On Call</div>
+  </div>
+  <div class="stat-card" style="border-color:#8B5CF633">
+    <div class="bg-circle" style="background:#8B5CF6"></div>
+    <div class="stat-value" style="color:#8B5CF6" id="s-break">0</div>
+    <div class="stat-label">Break / Lunch</div>
+  </div>
+</div>
+
+<!-- Alert banner -->
+<div id="alert-banner"></div>
+
+<!-- Agent grid -->
+<div id="grid-container">
+  <div id="grid"></div>
+</div>
+
+<script>
+const WEBHOOK = "https://ash-321.app.n8n.cloud/webhook/3cx-status";
+
+const STATUS_META = {
+  "Available":        { color:"#00C389", bg:"#00C38918", label:"Available" },
+  "Away":             { color:"#F59E0B", bg:"#F59E0B18", label:"Away" },
+  "Do Not Disturb":   { color:"#EF4444", bg:"#EF444418", label:"DND" },
+  "Not Registered":   { color:"#6B7280", bg:"#6B728018", label:"Offline" },
+  "Lunch":            { color:"#8B5CF6", bg:"#8B5CF618", label:"Lunch" },
+  "Break":            { color:"#EC4899", bg:"#EC489918", label:"Break" },
+  "With Client":      { color:"#3B82F6", bg:"#3B82F618", label:"With Client" },
+  "Outgoing":         { color:"#06B6D4", bg:"#06B6D418", label:"On Call" },
+  "Follow Up":        { color:"#F97316", bg:"#F9731618", label:"Follow Up" },
+  "Call Pending":     { color:"#A78BFA", bg:"#A78BFA18", label:"Call Pending" },
+};
+const PROFILE_MAP = { Available:"Available", Away:"Away", DoNotDisturb:"Do Not Disturb", Lunch:"Lunch", BusinessTrip:"Away", Custom:"Away", WalkingAround:"Away", OutOfOffice:"Away" };
+
+function getStatus(s) { return STATUS_META[s] || STATUS_META["Not Registered"]; }
+function mapProfile(p, reg) { if(!reg) return "Not Registered"; return PROFILE_MAP[p]||p||"Available"; }
+function fmtMins(m) { if(!m||m<=0) return ""; const h=Math.floor(m/60),mm=m%60; if(h===0) return mm+"m"; if(mm===0) return h+"h"; return h+"h "+mm+"m"; }
+
+function parseStaff(data) {
+  let raw=[];
+  if(Array.isArray(data)) raw=data;
+  else if(data?.value&&Array.isArray(data.value)) raw=data.value;
+  else { for(const k of Object.keys(data||{})) { if(Array.isArray(data[k])){raw=data[k];break;} } }
+  return raw.filter(e=>e&&(e.Number||e.Id||e.DN)).map(e=>({
+    id: String(e.Number||e.DN||e.Id),
+    name: [e.FirstName,e.LastName].filter(Boolean).join(" ")||`Ext ${e.Number||e.DN}`,
+    ext: String(e.Number||e.DN||e.Id||""),
+    status: mapProfile(e.CurrentProfile||e.Profile||e.Status, e.Registered!==false&&e.IsRegistered!==false),
+    dept: e.DepartmentName||e.Department||"",
+    currentDurationMin: e.currentDurationMin||0,
+    statusTotals: e.statusTotals||{},
+  }));
+}
+
+// Clock
+function updateClock() {
+  const now = new Date();
+  document.getElementById("clock").textContent = now.toLocaleTimeString("en-AE",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  document.getElementById("date").textContent = now.toLocaleDateString("en-AE",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+}
+setInterval(updateClock,1000); updateClock();
+
+// Render
+function render(staff) {
+  const total = staff.length;
+  const counts = {};
+  for(const s of staff) counts[s.status]=(counts[s.status]||0)+1;
+
+  document.getElementById("s-total").textContent = total;
+  document.getElementById("s-available").textContent = counts["Available"]||0;
+  document.getElementById("s-available-pct").textContent = total?Math.round((counts["Available"]||0)/total*100)+"%":"";
+  document.getElementById("s-away").textContent = counts["Away"]||0;
+  document.getElementById("s-away-pct").textContent = total?Math.round((counts["Away"]||0)/total*100)+"%":"";
+  document.getElementById("s-dnd").textContent = counts["Do Not Disturb"]||0;
+  document.getElementById("s-offline").textContent = counts["Not Registered"]||0;
+  document.getElementById("s-oncall").textContent = counts["Outgoing"]||0;
+  document.getElementById("s-break").textContent = (counts["Break"]||0)+(counts["Lunch"]||0);
+
+  // Alert banner
+  const awayPct = total?Math.round((counts["Away"]||0)/total*100):0;
+  const banner = document.getElementById("alert-banner");
+  if(awayPct >= 30) {
+    banner.style.display="block";
+    banner.style.background="#F59E0B22";
+    banner.style.color="#F59E0B";
+    banner.textContent=`⚠ ${awayPct}% of team is Away — ${counts["Away"]||0} agents unavailable`;
+    banner.classList.add("pulsing");
+  } else if((counts["Do Not Disturb"]||0) >= 5) {
+    banner.style.display="block";
+    banner.style.background="#EF444422";
+    banner.style.color="#EF4444";
+    banner.textContent=`🔴 ${counts["Do Not Disturb"]||0} agents on Do Not Disturb`;
+    banner.classList.remove("pulsing");
+  } else {
+    banner.style.display="none";
+  }
+
+  // Sort: available first, then by name
+  const order = ["Available","Outgoing","With Client","Follow Up","Call Pending","Lunch","Break","Away","Do Not Disturb","Not Registered"];
+  const sorted = [...staff].sort((a,b)=>(order.indexOf(a.status)-order.indexOf(b.status))||a.name.localeCompare(b.name));
+
+  const grid = document.getElementById("grid");
+  grid.innerHTML = sorted.map(s=>{
+    const m = getStatus(s.status);
+    const dur = s.currentDurationMin>0?fmtMins(s.currentDurationMin):"";
+    return `
+      <div class="agent-card" style="border-color:${m.color}33; background:${m.bg}">
+        <div class="accent" style="background:${m.color}"></div>
+        <div class="agent-name" title="${s.name}">${s.name}</div>
+        <div class="agent-ext">Ext ${s.ext}${s.dept?" · "+s.dept:""}</div>
+        <div>
+          <span class="agent-status" style="color:${m.color}; background:${m.color}18">
+            <span class="agent-dot" style="background:${m.color}; box-shadow:0 0 5px ${m.color}99"></span>
+            ${m.label}
+          </span>
+        </div>
+        ${dur?`<div class="agent-duration">⏱ ${dur}</div>`:""}
+      </div>`;
+  }).join("");
+}
+
+// Fetch
+async function fetchData() {
+  try {
+    const res = await fetch(WEBHOOK);
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    const data = await res.json();
+    const staff = parseStaff(data);
+    if(staff.length>0) {
+      render(staff);
+      document.getElementById("subtitle").textContent = `✅ Live · ${new Date().toLocaleTimeString("en-AE")} · ${staff.length} agents`;
+      document.getElementById("subtitle").style.color="#4b5563";
+    }
+  } catch(e) {
+    document.getElementById("subtitle").textContent = "⚠ Connection error — retrying...";
+    document.getElementById("subtitle").style.color="#EF4444";
+  }
+}
+
+fetchData();
+setInterval(fetchData, 30000); // refresh every 30s on wallboard
+</script>
+</body>
+</html>
